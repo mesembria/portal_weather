@@ -144,8 +144,8 @@ time_label = Label(terminalio.FONT, text="00:00", color=0xFFFFFF)
 time_label.x = 2
 time_label.y = 6
 
-temp_label = Label(terminalio.FONT, text="--°F", color=0xFFFFFF)
-temp_label.x = 5
+temp_label = Label(terminalio.FONT, text="--F", color=0xFFFFFF)
+temp_label.x = 6
 temp_label.y = 24
 
 # Center temperature label vertically in bottom half, shifted up by 1
@@ -253,12 +253,46 @@ def draw_sun_path(bitmap, current_time, sunrise_time, sunset_time):
             if bitmap[x, y] == 0:
                 bitmap[x, y] = 1  # Arc color
 
+# Create loading message label
+loading_label = Label(terminalio.FONT, text="Loading...", color=0xFFFFFF)
+# Center the loading text
+loading_label.x = (DISPLAY_WIDTH - len(loading_label.text) * 6) // 2  # 6 pixels per character
+loading_label.y = DISPLAY_HEIGHT // 2  # Vertically centered
+
 # Add elements to group
 group.append(time_label)
 group.append(temp_label)
 group.append(icons)
 group.append(temp_range)
 group.append(sun_path)
+
+def show_loading():
+    """Display loading state by showing only the weather icon and loading text."""
+    # Remove all elements except the weather icon
+    if time_label in group:
+        group.remove(time_label)
+    if temp_label in group:
+        group.remove(temp_label)
+    if temp_range in group:
+        group.remove(temp_range)
+    if sun_path in group:
+        group.remove(sun_path)
+    group.append(loading_label)
+    display.refresh()
+
+def hide_loading():
+    """Restore normal display by showing all elements and hiding loading text."""
+    if loading_label in group:
+        group.remove(loading_label)
+    if time_label not in group:
+        group.append(time_label)
+    if temp_label not in group:
+        group.append(temp_label)
+    if temp_range not in group:
+        group.append(temp_range)
+    if sun_path not in group:
+        group.append(sun_path)
+    display.refresh()
 
 def get_icon(code):
     """
@@ -292,6 +326,9 @@ def get_weather():
         (70°F, clear day, current time, current time, current time + 12h, 60°F, 80°F)
     """
     try:
+        # Show loading screen
+        show_loading()
+        
         # Determine data source based on configuration
         if secrets.get('use_fake_data', False):
             response = type('Response', (), {'text': json.dumps(FAKE_RESPONSE)})()
@@ -307,7 +344,7 @@ def get_weather():
         current_data = data['current']
         daily_data = data['daily'][0]['temp']
         
-        return (
+        result = (
             int(current_data['temp']),
             current_data['weather'][0]['icon'],
             current_data['dt'],
@@ -317,8 +354,15 @@ def get_weather():
             int(daily_data['max'])
         )
         
+        # Hide loading screen
+        hide_loading()
+        
+        return result
+        
     except Exception as e:
         print("Weather fetch error: {}".format(e))
+        # Hide loading screen even on error
+        hide_loading()
         # Return default values on error
         return (70, "01d", 0, 0, 43200, 60, 80)  # Use 0 for time values
 
