@@ -4,6 +4,7 @@
 .metadata_never_index
 System Volume Information/
 ._*
+.vscode
 
 # Python cache
 *.pyc
