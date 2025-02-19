@@ -1,0 +1,21 @@
+# System files
+.DS_Store
+.Trashes
+.metadata_never_index
+System Volume Information/
+._*
+
+# Python cache
+*.pyc
+__pycache__/
+
+# CircuitPython specific
+boot_out.txt
+secrets.py
+
+# Keep these files
+!code.py
+
+!*.bmp
+!lib/
+!fonts/
