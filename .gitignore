@@ -20,3 +20,4 @@ secrets.py
 !*.bmp
 !lib/
 !fonts/
+.vscode/settings.json

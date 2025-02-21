@@ -13,6 +13,7 @@ import board
 import terminalio
 import displayio
 import math
+import time
 from adafruit_display_text.label import Label
 from adafruit_matrixportal.matrix import Matrix
 from adafruit_matrixportal.network import Network
@@ -172,7 +173,7 @@ temp_range = displayio.TileGrid(temp_range_bitmap, pixel_shader=temp_range_palet
 
 # Create sun path bitmap (20x16 for bottom right corner)
 sun_path_bitmap = displayio.Bitmap(20, 16, 3)
-sun_path = displayio.TileGrid(sun_path_bitmap, pixel_shader=sun_palette, x=42, y=22)  # Position from bottom
+sun_path = displayio.TileGrid(sun_path_bitmap, pixel_shader=sun_palette, x=42, y=14)  # Moved higher up for better visibility
 
 def draw_temp_range(bitmap, current, min_temp, max_temp):
     """
@@ -221,37 +222,52 @@ def draw_sun_path(bitmap, current_time, sunrise_time, sunset_time):
         sunset_time: Sunset Unix timestamp
     """
     bitmap.fill(0)  # Clear bitmap
-            
     
-    # Calculate and draw sun first (if it should be visible)
-    if sunrise_time <= current_time <= sunset_time:
-        # Calculate sun's horizontal position (0 to 19)
-        progress = (current_time - sunrise_time) / (sunset_time - sunrise_time)
-        sun_x = int(progress * 19)
-        
-        # Calculate sun's vertical position using sine wave
-        # Adjust phase to match arc position
-        angle = (sun_x / 19.0) * math.pi
-        sun_y = int(8 - 6 * math.sin(angle))  # Changed base from 6 to 8
-        
-        # Move sun above the arc
-        sun_y = max(2, sun_y - 2)  # Keep at least 2 pixels from top
- 
-        
-        # Draw sun and glow first
-        for dx in [-1, 0, 1]:
-            for dy in [-1, 0, 1]:
-                if 0 <= sun_x + dx < 20 and 0 <= sun_y + dy < 16:
-                    bitmap[sun_x + dx, sun_y + dy] = 2  # Draw glow
-        bitmap[sun_x, sun_y] = 2  # Draw sun center last to ensure it's visible
-    
-    # Draw the arc second (so it appears behind the sun)
+    # Draw the arc path (more visible, higher in the display)
     for x in range(20):
-        y = int(8 - 6 * math.sin(math.pi * x / 19))  # Changed base from 6 to 8
-        if y < 16:
-            # Only draw arc where there isn't already a sun or glow
-            if bitmap[x, y] == 0:
-                bitmap[x, y] = 1  # Arc color
+        angle = (x / 19.0) * math.pi
+        y = int(15 - 8 * math.sin(angle))  # Raised base, adjusted amplitude
+        if 0 <= y < 16:
+            bitmap[x, y] = 1  # Arc color
+    
+    # Only draw sun during daytime
+    if sunrise_time <= current_time <= sunset_time and sunset_time > sunrise_time:
+        try:
+            # Handle large timestamp values by working with offsets
+            time_offset = current_time - sunrise_time
+            day_length = sunset_time - sunrise_time
+            
+            # Calculate progress through the day (0.0 to 1.0)
+            day_progress = time_offset / day_length
+            day_progress = max(0.0, min(1.0, day_progress))
+            
+            # Calculate sun position
+            sun_x = int(day_progress * 19)
+            angle = (sun_x / 19.0) * math.pi
+            sun_y = int(15 - 8 * math.sin(angle))  # Match arc calculation
+            
+            # Ensure sun stays within bitmap bounds
+            sun_x = max(0, min(19, sun_x))
+            sun_y = max(1, min(14, sun_y))
+            
+            # Draw sun glow first (ensuring it doesn't overflow bounds)
+            for dy in [-1, 0, 1]:
+                for dx in [-1, 0, 1]:
+                    x, y = sun_x + dx, sun_y + dy
+                    if 0 <= x < 20 and 0 <= y < 16:
+                        # Create a more visible glow pattern
+                        if dx == 0 and dy == 0:
+                            continue  # Skip center (will be drawn last)
+                        elif abs(dx) + abs(dy) == 1:  # Direct neighbors
+                            bitmap[x, y] = 2  # Bright glow
+                        else:  # Diagonal neighbors
+                            bitmap[x, y] = 1  # Dimmer glow
+            
+            # Draw sun center last (always visible)
+            bitmap[sun_x, sun_y] = 2
+            
+        except Exception as e:
+            print("Error drawing sun:", e)
 
 # Create loading message label
 loading_label = Label(terminalio.FONT, text="Loading...", color=0xFFFFFF)
@@ -366,38 +382,6 @@ def get_weather():
         # Return default values on error
         return (70, "01d", 0, 0, 43200, 60, 80)  # Use 0 for time values
 
-# Initialize with default values
-last_weather_update = -UPDATE_DELAY  # Force immediate update on first loop
-current_temp = 70
-icon_code = "01d"
-current_dt = 0  # Will be updated from API
-sunrise_time = 0  # Will be updated from API
-sunset_time = 43200  # 12 hours by default
-min_temp = 60
-max_temp = 80
-
-# Initial display updates
-local_timestamp = current_dt + (UTC_OFFSET * 3600)
-hour = (local_timestamp % 86400) // 3600
-minute = (local_timestamp % 3600) // 60
-period = "PM" if hour >= 12 else "AM"
-display_hour = hour if hour <= 12 else hour - 12
-display_hour = 12 if display_hour == 0 else display_hour
-current_time = "{:02d}:{:02d}".format(display_hour, minute)
-time_label.text = current_time
-
-temp_label.text = "{}°F".format(current_temp)
-temp_label.color = temp_to_color(current_temp)
-
-# Initial weather icon update
-icons[0] = ICON_MAP.get(icon_code, 0)
-
-# Initial display updates for temperature range and sun path
-draw_sun_path(sun_path_bitmap, current_dt, sunrise_time, sunset_time)
-draw_temp_range(temp_range_bitmap, current_temp, min_temp, max_temp)
-
-last_minute = minute  # Track the last minute we updated the display
-
 def update_time_display(hour, minute):
     """
     Update the time display with the given hour and minute.
@@ -427,28 +411,68 @@ def update_weather_display(weather_data):
     draw_sun_path(sun_path_bitmap, timestamp, sunrise, sunset)
     draw_temp_range(temp_range_bitmap, current_temp, min_temp, max_temp)
 
+# Initialize with default values
+last_weather_update = -time.monotonic()  # Force immediate update on first loop
+last_minute_update = time.monotonic()  # Track minute updates
+seconds_since_update = 0  # Track seconds since last API update
+current_temp = 70
+icon_code = "01d"
+current_dt = 0  # Will be updated from API
+sunrise_time = 0  # Will be updated from API
+sunset_time = 43200  # 12 hours by default
+min_temp = 60
+max_temp = 80
+
+# Get initial weather data
+weather_data = get_weather()
+current_dt = weather_data[2]  # Get initial time from API
+current_temp = weather_data[0]
+icon_code = weather_data[1]
+sunrise_time = weather_data[3]
+sunset_time = weather_data[4]
+min_temp = weather_data[5]
+max_temp = weather_data[6]
+
+# Initial display updates using API data
+local_timestamp = current_dt + (UTC_OFFSET * 3600)
+hour = (local_timestamp % 86400) // 3600
+minute = (local_timestamp % 3600) // 60
+update_time_display(hour, minute)
+
+temp_label.text = "{}°F".format(current_temp)
+temp_label.color = temp_to_color(current_temp)
+
+# Initial weather icon update
+icons[0] = ICON_MAP.get(icon_code, 0)
+
+# Initial display updates for temperature range and sun path
+draw_sun_path(sun_path_bitmap, current_dt, sunrise_time, sunset_time)
+draw_temp_range(temp_range_bitmap, current_temp, min_temp, max_temp)
+
+last_minute = minute  # Track the last minute we updated the display
+last_weather_update = time.monotonic()  # Start tracking from initial update
+
 # Main loop
 while True:
-    # Get current time from weather data timestamp
-    local_timestamp = current_dt + (UTC_OFFSET * 3600)
-    hour = (local_timestamp % 86400) // 3600
-    minute = (local_timestamp % 3600) // 60
+    current_time = time.monotonic()
     
-    # Update time display when minute changes
-    if minute != last_minute:
+    # Update time display every minute
+    if current_time - last_minute_update >= 60:
+        # Calculate time based on last API update plus elapsed seconds
+        seconds_since_update = int(current_time - last_weather_update)
+        local_timestamp = (current_dt + seconds_since_update) + (UTC_OFFSET * 3600)
+        hour = int((local_timestamp % 86400) // 3600)
+        minute = int((local_timestamp % 3600) // 60)
+        
         update_time_display(hour, minute)
-        last_minute = minute
+        last_minute_update = current_time
 
     # Update weather data every WEATHER_UPDATE_INTERVAL seconds
-    if last_weather_update < 0:  # First update
+    if current_time - last_weather_update >= WEATHER_UPDATE_INTERVAL:
         weather_data = get_weather()
         current_dt = weather_data[2]  # Update current time from API
         update_weather_display(weather_data)
-        last_weather_update = 0
-    elif current_dt - last_weather_update > WEATHER_UPDATE_INTERVAL:
-        weather_data = get_weather()
-        current_dt = weather_data[2]  # Update current time from API
-        update_weather_display(weather_data)
-        last_weather_update = current_dt
+        last_weather_update = current_time
+        seconds_since_update = 0  # Reset elapsed seconds counter
     
     # No sleep needed - the display hardware handles the refresh rate
