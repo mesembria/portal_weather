@@ -2,7 +2,6 @@
 
 A CircuitPython application for Matrix Portal that displays real-time weather information on an LED matrix display. The display shows current temperature, time, weather conditions, and sun position throughout the day.
 
-![Weather Display Features](https://raw.githubusercontent.com/adafruit/Adafruit_Learning_System_Guides/main/Matrix_Portal_Weather_Display/weather_display.jpg)
 
 ## Features
 
