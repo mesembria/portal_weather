@@ -1,7 +1,6 @@
 secrets = {
     'ssid' : '',
     'password' : '',
-    'timezone' : "America/New_York", # http://worldtimeapi.org/timezones
     'lat' : '',
     'long' : '',
     'openweather_token' : '',
